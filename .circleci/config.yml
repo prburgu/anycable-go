@@ -67,11 +67,11 @@ workflows:
         - build
         - build_linux_mruby
         - build_darwin_mruby
-        filters:
-          tags:
-            only: /^v[0-9]+\.[0-9]+\.[0-9]+((\-|\.)(preview|beta|rc)\d+)?$/
-          branches:
-            ignore: /.*/
+        # filters:
+        #   tags:
+        #     only: /^v[0-9]+\.[0-9]+\.[0-9]+((\-|\.)(preview|beta|rc)\d+)?$/
+        #   branches:
+        #     ignore: /.*/
 
 executors:
   golang:
@@ -112,7 +112,7 @@ commands:
       postfix:
         type: string
     steps:
-      - run: env GOOS=<< parameters.os >> GOARCH=<< parameters.arch >> go build -ldflags "-s -w -X main.version=$(git describe --tags)" -a -o "/tmp/dist/anycable-go-$(git describe --tags)-<< parameters.postfix >>" cmd/anycable-go/main.go
+      - run: env GOOS=<< parameters.os >> GOARCH=<< parameters.arch >> go build -ldflags "-s -w -X main.version=v0.6.3" -a -o "/tmp/dist/anycable-go-v0.6.3-<< parameters.postfix >>" cmd/anycable-go/main.go
   build-mruby:
     description: Build AnyCable Go binary with mruby support
     parameters:
@@ -123,7 +123,7 @@ commands:
       postfix:
         type: string
     steps:
-      - run: env GOOS=<< parameters.os >> GOARCH=<< parameters.arch >> go build -ldflags "-s -w -X main.version=$(git describe --tags)-mrb" -tags mrb -a -o "/tmp/dist/anycable-go-$(git describe --tags)-<< parameters.postfix >>" cmd/anycable-go/main.go
+      - run: env GOOS=<< parameters.os >> GOARCH=<< parameters.arch >> go build -ldflags "-s -w -X main.version=v0.6.3-mrb" -tags mrb -a -o "/tmp/dist/anycable-go-v0.6.3-<< parameters.postfix >>" cmd/anycable-go/main.go
 
 # Jobs definitions
 jobs:
@@ -174,7 +174,7 @@ jobs:
         at: /go/src/github.com/anycable/anycable-go/
     - run:
         name: Building Linux amd64 binary
-        command: go build -ldflags "-s -w -X main.version=$(git describe --tags)" -a -o "/tmp/anycable-go-test" cmd/anycable-go/main.go
+        command: go build -ldflags "-s -w -X main.version=v0.6.3" -a -o "/tmp/anycable-go-test" cmd/anycable-go/main.go
     - save_cache:
         key: binary-for-conformance-{{ .Revision }}
         paths: /tmp/anycable-go-test
@@ -353,7 +353,7 @@ jobs:
         command: sha256sum anycable-go-* > SHA256SUM
     - run:
         name: Install ghr tool
-        command: go get github.com/tcnksm/ghr
+        command: env GO111MODULE=off go get github.com/tcnksm/ghr
     - run:
         name: Upload GitHub release
-        command: ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -prerelease -delete ${CIRCLE_TAG} ./
+        command: ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c "775a5b6c9894c835cf8b6bda7675a2c211e1454f" -prerelease -delete v0.6.3 ./
