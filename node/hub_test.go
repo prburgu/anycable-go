@@ -2,19 +2,19 @@ package node
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestUnsubscribeRaceConditions(t *testing.T) {
 	hub := NewHub()
+	node := NewMockNode()
 
 	go hub.Run()
 	defer hub.Shutdown()
 
-	session := NewMockSession("123")
-	session2 := NewMockSession("321")
+	session := NewMockSession("123", &node)
+	session2 := NewMockSession("321", &node)
 
 	hub.addSession(session)
 	hub.subscribeSession("123", "test", "test_channel")
@@ -24,20 +24,11 @@ func TestUnsubscribeRaceConditions(t *testing.T) {
 
 	hub.Broadcast("test", "hello")
 
-	done := make(chan bool)
-	timer := time.After(100 * time.Millisecond)
+	_, err := session.ws.Read()
+	assert.Nil(t, err)
 
-	go func() {
-		<-session.send
-		<-session2.send
-		done <- true
-	}()
-
-	select {
-	case <-timer:
-		t.Fatalf("Session hasn't received any messages")
-	case <-done:
-	}
+	_, err = session2.ws.Read()
+	assert.Nil(t, err)
 
 	assert.Equal(t, 2, hub.Size(), "Connections size must be equal 2")
 
@@ -51,31 +42,26 @@ func TestUnsubscribeRaceConditions(t *testing.T) {
 		hub.Broadcast("test", "bye-bye")
 	}()
 
-	timer2 := time.After(2500 * time.Millisecond)
-	go func() {
-		<-session2.send
-		<-session2.send
-		<-session2.send
-		<-session.send
-		done <- true
-	}()
-
-	select {
-	case <-timer2:
-		t.Fatalf("Session hasn't received any messages")
-	case <-done:
-	}
+	_, err = session2.ws.Read()
+	assert.Nil(t, err)
+	_, err = session2.ws.Read()
+	assert.Nil(t, err)
+	_, err = session2.ws.Read()
+	assert.Nil(t, err)
+	_, err = session.ws.Read()
+	assert.Nil(t, err)
 
 	assert.Equal(t, 1, hub.Size(), "Connections size must be equal 1")
 }
 
 func TestUnsubscribeSession(t *testing.T) {
 	hub := NewHub()
+	node := NewMockNode()
 
 	go hub.Run()
 	defer hub.Shutdown()
 
-	session := NewMockSession("123")
+	session := NewMockSession("123", &node)
 	hub.addSession(session)
 
 	hub.subscribeSession("123", "test", "test_channel")
@@ -83,54 +69,39 @@ func TestUnsubscribeSession(t *testing.T) {
 
 	hub.Broadcast("test", "\"hello\"")
 
-	timer := time.After(100 * time.Millisecond)
-	select {
-	case <-timer:
-		t.Fatalf("Session hasn't received any messages")
-	case msg := <-session.send:
-		assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"hello\"}", string(msg.payload))
-	}
+	msg, err := session.ws.Read()
+	assert.Nil(t, err)
+	assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"hello\"}", string(msg))
 
 	hub.unsubscribeSession("123", "test", "test_channel")
 
 	hub.Broadcast("test", "\"goodbye\"")
 
-	timer = time.After(100 * time.Millisecond)
-	select {
-	case <-timer:
-	case msg := <-session.send:
-		t.Fatalf("Session shouldn't have received any messages but received: %v", string(msg.payload))
-	}
+	_, err = session.ws.Read()
+	assert.NotNil(t, err)
 
 	hub.Broadcast("test2", "\"bye\"")
 
-	timer = time.After(100 * time.Millisecond)
-	select {
-	case <-timer:
-		t.Fatalf("Session hasn't received any messages")
-	case msg := <-session.send:
-		assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"bye\"}", string(msg.payload))
-	}
+	msg, err = session.ws.Read()
+	assert.Nil(t, err)
+	assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"bye\"}", string(msg))
 
 	hub.unsubscribeSessionFromAllChannels("123")
 
 	hub.Broadcast("test2", "\"goodbye\"")
 
-	timer = time.After(100 * time.Millisecond)
-	select {
-	case <-timer:
-	case msg := <-session.send:
-		t.Fatalf("Session shouldn't have received any messages but received: %v", string(msg.payload))
-	}
+	msg, err = session.ws.Read()
+	assert.NotNil(t, err)
 }
 
 func TestSubscribeSession(t *testing.T) {
 	hub := NewHub()
+	node := NewMockNode()
 
 	go hub.Run()
 	defer hub.Shutdown()
 
-	session := NewMockSession("123")
+	session := NewMockSession("123", &node)
 	hub.addSession(session)
 
 	t.Run("Subscribe to a single channel", func(t *testing.T) {
@@ -138,13 +109,9 @@ func TestSubscribeSession(t *testing.T) {
 
 		hub.Broadcast("test", "\"hello\"")
 
-		timer := time.After(100 * time.Millisecond)
-		select {
-		case <-timer:
-			t.Fatalf("Session hasn't received any messages")
-		case msg := <-session.send:
-			assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"hello\"}", string(msg.payload))
-		}
+		msg, err := session.ws.Read()
+		assert.Nil(t, err)
+		assert.Equal(t, "{\"identifier\":\"test_channel\",\"message\":\"hello\"}", string(msg))
 	})
 
 	t.Run("Successful to the same stream from multiple channels", func(t *testing.T) {
@@ -153,23 +120,18 @@ func TestSubscribeSession(t *testing.T) {
 
 		hub.Broadcast("test", "\"hello twice\"")
 
-		done := make(chan bool)
 		received := []string{}
 
-		go func() {
-			received = append(received, string((<-session.send).payload))
-			received = append(received, string((<-session.send).payload))
-			done <- true
-		}()
+		msg, err := session.ws.Read()
+		assert.Nil(t, err)
+		received = append(received, string(msg))
 
-		timer := time.After(100 * time.Millisecond)
-		select {
-		case <-timer:
-			t.Fatalf("Session hasn't received enough messages. Received: %v", received)
-		case <-done:
-			assert.Contains(t, received, "{\"identifier\":\"test_channel\",\"message\":\"hello twice\"}")
-			assert.Contains(t, received, "{\"identifier\":\"test_channel2\",\"message\":\"hello twice\"}")
-		}
+		msg, err = session.ws.Read()
+		assert.Nil(t, err)
+		received = append(received, string(msg))
+
+		assert.Contains(t, received, "{\"identifier\":\"test_channel\",\"message\":\"hello twice\"}")
+		assert.Contains(t, received, "{\"identifier\":\"test_channel2\",\"message\":\"hello twice\"}")
 	})
 }
 

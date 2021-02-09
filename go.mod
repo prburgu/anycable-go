@@ -14,6 +14,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/kr/pty v1.1.8 // indirect
+	github.com/mailru/easygo v0.0.0-20190618140210-3c14a0dc985f
 	github.com/matoous/go-nanoid v1.3.0
 	github.com/mattn/go-isatty v0.0.7
 	github.com/mitchellh/go-mruby v0.0.0-20181003231329-cd6a04a6ea57

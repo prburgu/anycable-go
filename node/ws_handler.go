@@ -7,6 +7,7 @@ import (
 	"github.com/anycable/anycable-go/utils"
 	"github.com/apex/log"
 	"github.com/gorilla/websocket"
+	"github.com/mailru/easygo/netpoll"
 )
 
 // WSConfig contains WebSocket connection configuration.
@@ -69,7 +70,8 @@ func WebsocketHandler(app *Node, fetchHeaders []string, config *WSConfig) http.H
 
 		// Separate goroutine for better GC of caller's data.
 		go func() {
-			session := NewSession(app, ws, url, headers, uid)
+			wrappedConn := WSConnection{conn: ws}
+			session := NewSession(app, wrappedConn, url, headers, uid)
 
 			err := app.Authenticate(session)
 
@@ -81,7 +83,20 @@ func WebsocketHandler(app *Node, fetchHeaders []string, config *WSConfig) http.H
 
 			session.Log.Debug("websocket session established")
 
-			session.ReadMessages()
+			desc := netpoll.Must(netpoll.HandleRead(ws.UnderlyingConn()))
+			poller := *app.Poller
+			pool := *app.GoPool
+
+			poller.Start(desc, func(ev netpoll.Event) {
+				if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
+					poller.Stop(desc)
+					return
+				}
+
+				pool.Schedule(func() {
+					session.ReadMessage()
+				})
+			})
 
 			session.Log.Debug("websocket session completed")
 		}()

@@ -33,6 +33,9 @@ github.com/gorilla/websocket
 ## explicit
 # github.com/kr/pty v1.1.8
 ## explicit
+# github.com/mailru/easygo v0.0.0-20190618140210-3c14a0dc985f
+## explicit
+github.com/mailru/easygo/netpoll
 # github.com/matoous/go-nanoid v1.3.0
 ## explicit
 github.com/matoous/go-nanoid

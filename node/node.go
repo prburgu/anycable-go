@@ -8,7 +8,10 @@ import (
 
 	"github.com/anycable/anycable-go/common"
 	"github.com/anycable/anycable-go/metrics"
+	"github.com/anycable/anycable-go/utils"
 	"github.com/apex/log"
+	"github.com/gorilla/websocket"
+	"github.com/mailru/easygo/netpoll"
 )
 
 const (
@@ -18,6 +21,10 @@ const (
 
 	// How often update node stats
 	statsCollectInterval = 5 * time.Second
+
+	goPoolMaxSize   = 1024
+	goPoolSize      = 128
+	goPoolQueueSize = 256
 
 	metricsGoroutines      = "goroutines_num"
 	metricsMemSys          = "mem_sys_bytes"
@@ -38,9 +45,52 @@ type AppNode interface {
 	HandlePubSub(msg []byte)
 }
 
+// Connection represents underlying connection
+type Connection interface {
+	Write(msg []byte, deadline time.Time) error
+	Read() ([]byte, error)
+	Close(code int, reason string)
+}
+
+// WSConnection is a WebSocket implementation of Connection
+type WSConnection struct {
+	conn *websocket.Conn
+}
+
+// Write writes message to a WebSocket
+func (ws WSConnection) Write(msg []byte, deadline time.Time) error {
+	if err := ws.conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+
+	w, err := ws.conn.NextWriter(websocket.TextMessage)
+
+	if err != nil {
+		return err
+	}
+
+	if _, err = w.Write(msg); err != nil {
+		return err
+	}
+
+	return w.Close()
+}
+
+func (ws WSConnection) Read() ([]byte, error) {
+	_, message, err := ws.conn.ReadMessage()
+	return message, err
+}
+
+// Close sends close frame with a given code and a reason
+func (ws WSConnection) Close(code int, reason string) {
+	utils.CloseWS(ws.conn, code, reason)
+}
+
 // Node represents the whole application
 type Node struct {
 	Metrics *metrics.Metrics
+	Poller  *netpoll.Poller
+	GoPool  *utils.GoPool
 
 	hub          *Hub
 	controller   Controller
@@ -66,9 +116,24 @@ func NewNode(controller Controller, metrics *metrics.Metrics) *Node {
 }
 
 // Start runs all the required goroutines
-func (n *Node) Start() {
+func (n *Node) Start() error {
+	poll, err := netpoll.New(nil)
+	n.Poller = &poll
+
+	if err != nil {
+		return err
+	}
+
+	n.GoPool, err = utils.NewGoPool(goPoolMaxSize, goPoolQueueSize, goPoolSize)
+
+	if err != nil {
+		return err
+	}
+
 	go n.hub.Run()
 	go n.collectStats()
+
+	return nil
 }
 
 // SetDisconnector set disconnector for the node

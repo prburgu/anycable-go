@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/anycable/anycable-go/common"
-	"github.com/anycable/anycable-go/utils"
 	"github.com/apex/log"
 	"github.com/gorilla/websocket"
 )
@@ -52,10 +51,9 @@ type sentFrame struct {
 // Session represents active client
 type Session struct {
 	node          *Node
-	ws            *websocket.Conn
+	ws            Connection
 	env           *common.SessionEnv
 	subscriptions map[string]bool
-	send          chan sentFrame
 	closed        bool
 	connected     bool
 	// Main mutex (for read/write and important session updates)
@@ -70,13 +68,12 @@ type Session struct {
 }
 
 // NewSession build a new Session struct from ws connetion and http request
-func NewSession(node *Node, ws *websocket.Conn, url string, headers map[string]string, uid string) *Session {
+func NewSession(node *Node, ws Connection, url string, headers map[string]string, uid string) *Session {
 	session := &Session{
 		node:          node,
 		ws:            ws,
 		env:           common.NewSessionEnv(url, &headers),
 		subscriptions: make(map[string]bool),
-		send:          make(chan sentFrame, 256),
 		closed:        false,
 		connected:     false,
 	}
@@ -90,35 +87,15 @@ func NewSession(node *Node, ws *websocket.Conn, url string, headers map[string]s
 	session.Log = ctx
 
 	session.addPing()
-	go session.SendMessages()
 
 	return session
 }
 
-// SendMessages waits for incoming messages and send them to the client connection
-func (s *Session) SendMessages() {
-	defer s.Disconnect("Write Failed", CloseAbnormalClosure)
-	for message := range s.send {
-		switch message.frameType {
-		case textFrame:
-			err := s.write(message.payload, time.Now().Add(writeWait))
-
-			if err != nil {
-				return
-			}
-		case closeFrame:
-			utils.CloseWS(s.ws, message.closeCode, message.closeReason)
-			return
-		default:
-			s.Log.Errorf("Unknown frame type: %v", message)
-			return
-		}
-	}
-}
-
 // Send data to client connection
 func (s *Session) Send(msg []byte) {
-	s.sendFrame(&sentFrame{frameType: textFrame, payload: msg})
+	s.node.GoPool.Schedule(func() {
+		s.sendFrame(&sentFrame{frameType: textFrame, payload: msg})
+	})
 }
 
 func (s *Session) sendClose(reason string, code int) {
@@ -129,68 +106,47 @@ func (s *Session) sendClose(reason string, code int) {
 	})
 }
 
-func (s *Session) sendFrame(frame *sentFrame) {
-	s.mu.Lock()
+func (s *Session) sendFrame(message *sentFrame) {
+	switch message.frameType {
+	case textFrame:
+		err := s.write(message.payload, time.Now().Add(writeWait))
 
-	if s.send == nil {
-		s.mu.Unlock()
+		if err != nil {
+			return
+		}
+	case closeFrame:
+		s.ws.Close(message.closeCode, message.closeReason)
+		return
+	default:
+		s.Log.Errorf("Unknown frame type: %v", message)
 		return
 	}
-
-	select {
-	case s.send <- *frame:
-	default:
-		if s.send != nil {
-			close(s.send)
-			defer s.Disconnect("Write failed", CloseAbnormalClosure)
-		}
-
-		s.send = nil
-	}
-
-	s.mu.Unlock()
 }
 
 func (s *Session) write(message []byte, deadline time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.ws.SetWriteDeadline(deadline); err != nil {
-		return err
-	}
-
-	w, err := s.ws.NextWriter(websocket.TextMessage)
-
-	if err != nil {
-		return err
-	}
-
-	if _, err = w.Write(message); err != nil {
-		return err
-	}
-
-	return w.Close()
+	return s.ws.Write(message, deadline)
 }
 
-// ReadMessages reads messages from ws connection and send them to node
-func (s *Session) ReadMessages() {
-	for {
-		_, message, err := s.ws.ReadMessage()
+// ReadMessage reads messages from ws connection and send them to node
+func (s *Session) ReadMessage() {
+	message, err := s.ws.Read()
 
-		if err != nil {
-			if websocket.IsCloseError(err, expectedCloseStatuses...) {
-				s.Log.Debugf("Websocket closed: %v", err)
-				s.Disconnect("Read closed", CloseNormalClosure)
-			} else {
-				s.Log.Debugf("Websocket close error: %v", err)
-				s.Disconnect("Read failed", CloseAbnormalClosure)
-			}
-			break
+	if err != nil {
+		if websocket.IsCloseError(err, expectedCloseStatuses...) {
+			s.Log.Debugf("Websocket closed: %v", err)
+			s.Disconnect("Read closed", CloseNormalClosure)
+		} else {
+			s.Log.Debugf("Websocket close error: %v", err)
+			s.Disconnect("Read failed", CloseAbnormalClosure)
 		}
+		return
+	}
 
-		if err := s.node.HandleCommand(s, message); err != nil {
-			s.Log.Warnf("Failed to handle incoming message '%s' with error: %v", message, err)
-		}
+	if err := s.node.HandleCommand(s, message); err != nil {
+		s.Log.Warnf("Failed to handle incoming message '%s' with error: %v", message, err)
 	}
 }
 
