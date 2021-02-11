@@ -77,7 +77,6 @@ func WebsocketHandler(app *Node, fetchHeaders []string, config *WSConfig) http.H
 
 			if err != nil {
 				ctx.Errorf("Websocket session initialization failed: %v", err)
-				session.Close("Auth Error", CloseInternalServerErr)
 				return
 			}
 
@@ -90,6 +89,7 @@ func WebsocketHandler(app *Node, fetchHeaders []string, config *WSConfig) http.H
 			poller.Start(desc, func(ev netpoll.Event) {
 				if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 					poller.Stop(desc)
+					session.Log.Debug("websocket session completed")
 					return
 				}
 
@@ -97,8 +97,6 @@ func WebsocketHandler(app *Node, fetchHeaders []string, config *WSConfig) http.H
 					session.ReadMessage()
 				})
 			})
-
-			session.Log.Debug("websocket session completed")
 		}()
 	})
 }

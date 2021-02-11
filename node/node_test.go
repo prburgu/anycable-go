@@ -164,6 +164,9 @@ func TestPerform(t *testing.T) {
 	t.Run("With connection state", func(t *testing.T) {
 		assert.Nil(t, node.Perform(session, &common.Message{Identifier: "test_channel", Data: "session"}))
 
+		_, err := session.ws.Read()
+		assert.Nil(t, err)
+
 		assert.Len(t, *session.env.ConnectionState, 1)
 		assert.Equal(t, "performed", (*session.env.ConnectionState)["_s_"])
 	})
@@ -188,6 +191,9 @@ func TestPerform(t *testing.T) {
 			return
 		}
 
+		_, err := session.ws.Read()
+		assert.Nil(t, err)
+
 		assert.Equalf(t, "14", subscription.session, "Session is invalid: %s", subscription.session)
 		assert.Equalf(t, "test_channel", subscription.identifier, "Channel is invalid: %s", subscription.identifier)
 		assert.Equalf(t, "stop_stream", subscription.stream, "Stream is invalid: %s", subscription.stream)
@@ -197,6 +203,9 @@ func TestPerform(t *testing.T) {
 		assert.Len(t, *session.env.ChannelStates, 0)
 
 		assert.Nil(t, node.Perform(session, &common.Message{Identifier: "test_channel", Data: "channel_state"}))
+
+		_, err := session.ws.Read()
+		assert.Nil(t, err)
 
 		assert.Len(t, *session.env.ChannelStates, 1)
 		assert.Len(t, (*session.env.ChannelStates)["test_channel"], 1)

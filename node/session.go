@@ -91,11 +91,83 @@ func NewSession(node *Node, ws Connection, url string, headers map[string]string
 	return session
 }
 
-// Send data to client connection
+// ReadMessage reads messages from ws connection and send them to node
+func (s *Session) ReadMessage() {
+	message, err := s.ws.Read()
+
+	if err != nil {
+		if websocket.IsCloseError(err, expectedCloseStatuses...) {
+			s.Log.Debugf("Websocket closed: %v", err)
+			s.Disconnect("Read closed", CloseNormalClosure)
+		} else {
+			s.Log.Debugf("Websocket close error: %v", err)
+			s.Disconnect("Read failed", CloseAbnormalClosure)
+		}
+		return
+	}
+
+	if err := s.node.HandleCommand(s, message); err != nil {
+		s.Log.Warnf("Failed to handle incoming message '%s' with error: %v", message, err)
+	}
+}
+
+// Send schedules a data transmission
 func (s *Session) Send(msg []byte) {
-	s.node.GoPool.Schedule(func() {
-		s.sendFrame(&sentFrame{frameType: textFrame, payload: msg})
+	s.Schedule(func() {
+		s.SendImmediately(msg)
 	})
+}
+
+// SendImmediately sends a message right away without adding to a queue
+func (s *Session) SendImmediately(msg []byte) {
+	s.sendFrame(&sentFrame{frameType: textFrame, payload: msg})
+}
+
+// Disconnect schedules connection disconnect
+func (s *Session) Disconnect(reason string, code int) {
+	s.Schedule(func() {
+		s.DisconnectImmediately(reason, code)
+	})
+}
+
+// DisconnectImmediately enqueues RPC disconnect request and closes the connection right away
+func (s *Session) DisconnectImmediately(reason string, code int) {
+	s.mu.Lock()
+	if s.connected {
+		defer s.node.Disconnect(s) // nolint:errcheck
+	}
+	s.connected = false
+	s.mu.Unlock()
+
+	s.close(reason, code)
+}
+
+// Schedule adds a taks to the execution queue
+func (s *Session) Schedule(task func()) {
+	task()
+}
+
+// Flush executes tasks from the queue
+func (s *Session) Flush() {
+
+}
+
+func (s *Session) close(reason string, code int) {
+	s.mu.Lock()
+
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+
+	s.closed = true
+	s.mu.Unlock()
+
+	s.sendClose(reason, code)
+
+	if s.pingTimer != nil {
+		s.pingTimer.Stop()
+	}
 }
 
 func (s *Session) sendClose(reason string, code int) {
@@ -128,57 +200,6 @@ func (s *Session) write(message []byte, deadline time.Time) error {
 	defer s.mu.Unlock()
 
 	return s.ws.Write(message, deadline)
-}
-
-// ReadMessage reads messages from ws connection and send them to node
-func (s *Session) ReadMessage() {
-	message, err := s.ws.Read()
-
-	if err != nil {
-		if websocket.IsCloseError(err, expectedCloseStatuses...) {
-			s.Log.Debugf("Websocket closed: %v", err)
-			s.Disconnect("Read closed", CloseNormalClosure)
-		} else {
-			s.Log.Debugf("Websocket close error: %v", err)
-			s.Disconnect("Read failed", CloseAbnormalClosure)
-		}
-		return
-	}
-
-	if err := s.node.HandleCommand(s, message); err != nil {
-		s.Log.Warnf("Failed to handle incoming message '%s' with error: %v", message, err)
-	}
-}
-
-// Disconnect enqueues RPC disconnect request and closes the connection
-func (s *Session) Disconnect(reason string, code int) {
-	s.mu.Lock()
-	if s.connected {
-		defer s.node.Disconnect(s) // nolint:errcheck
-	}
-	s.connected = false
-	s.mu.Unlock()
-
-	s.Close(reason, code)
-}
-
-// Close websocket connection with the specified reason
-func (s *Session) Close(reason string, code int) {
-	s.mu.Lock()
-
-	if s.closed {
-		s.mu.Unlock()
-		return
-	}
-
-	s.closed = true
-	s.mu.Unlock()
-
-	s.sendClose(reason, code)
-
-	if s.pingTimer != nil {
-		s.pingTimer.Stop()
-	}
 }
 
 func (s *Session) sendPing() {

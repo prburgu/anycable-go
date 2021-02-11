@@ -245,6 +245,12 @@ func (n *Node) Authenticate(s *Session) (err error) {
 		n.handleCallReply(s, res.ToCallResult())
 	}
 
+	if err != nil {
+		s.Disconnect("Auth Error", CloseInternalServerErr)
+	}
+
+	s.Flush()
+
 	return
 }
 
@@ -385,6 +391,8 @@ func (n *Node) handleCommandReply(s *Session, msg *common.Message, reply *common
 	if reply.Disconnect {
 		defer s.Disconnect("Command Failed", CloseAbnormalClosure)
 	}
+
+	defer s.Flush()
 
 	if reply.StopAllStreams {
 		n.hub.RemoveAllSubscriptions(s.UID, msg.Identifier)
