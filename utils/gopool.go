@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"time"
 )
@@ -17,16 +16,19 @@ type GoPool struct {
 	work chan func()
 }
 
-// NewGoPool creates new goroutine pool with given size. It also creates a work
-// queue of given size. Finally, it spawns given amount of goroutines
-// immediately.
-func NewGoPool(size, queue, spawn int) (*GoPool, error) {
-	if spawn <= 0 && queue > 0 {
-		return nil, errors.New("Invalid goroutine pool configuration")
+// NewGoPool creates new goroutine pool with given size.
+// Start size defaults to 20% of the max size.
+// Queue size defaults to 10% of the max size.
+func NewGoPool(size int) *GoPool {
+	spawn := int(size / 5)
+	queue := int(size / 10)
+
+	if spawn <= 0 {
+		spawn = 1
 	}
 
-	if spawn > size {
-		return nil, errors.New("Invalid goroutine pool configuration: the initial size is more than the max size")
+	if queue <= 0 {
+		queue = 1
 	}
 
 	p := &GoPool{
@@ -39,7 +41,7 @@ func NewGoPool(size, queue, spawn int) (*GoPool, error) {
 		go p.worker(func() {})
 	}
 
-	return p, nil
+	return p
 }
 
 // Schedule schedules task to be executed over pool's workers.

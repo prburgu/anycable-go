@@ -7,7 +7,7 @@ import (
 	"github.com/anycable/anycable-go/common"
 	"github.com/anycable/anycable-go/metrics"
 	"github.com/anycable/anycable-go/mocks"
-	"github.com/anycable/anycable-go/utils"
+	"github.com/oleiade/lane"
 
 	"github.com/apex/log"
 )
@@ -15,8 +15,7 @@ import (
 // NewMockNode build new node with mock controller
 func NewMockNode() Node {
 	controller := mocks.NewMockController()
-	node := NewNode(&controller, metrics.NewMetrics(nil, 10))
-	node.GoPool, _ = utils.NewGoPool(5, 1, 2)
+	node := NewNode(&controller, metrics.NewMetrics(nil, 10), 5, 2)
 	config := NewDisconnectQueueConfig()
 	config.Rate = 1
 	node.SetDisconnector(NewDisconnectQueue(node, &config))
@@ -63,6 +62,7 @@ func NewMockSession(uid string, node *Node) *Session {
 		Log:           log.WithField("sid", uid),
 		subscriptions: make(map[string]bool),
 		env:           common.NewSessionEnv("/cable-test", &map[string]string{}),
+		inbox:         lane.NewQueue(),
 	}
 }
 

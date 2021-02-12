@@ -27,6 +27,8 @@ type Config struct {
 	LogLevel             string
 	LogFormat            string
 	Metrics              metrics.Config
+	WsGopoolSize         int
+	HubGopoolSize        int
 }
 
 // New returns a new empty config

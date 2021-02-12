@@ -22,10 +22,6 @@ const (
 	// How often update node stats
 	statsCollectInterval = 5 * time.Second
 
-	goPoolMaxSize   = 1024
-	goPoolSize      = 128
-	goPoolQueueSize = 256
-
 	metricsGoroutines      = "goroutines_num"
 	metricsMemSys          = "mem_sys_bytes"
 	metricsClientsNum      = "clients_num"
@@ -100,7 +96,7 @@ type Node struct {
 }
 
 // NewNode builds new node struct
-func NewNode(controller Controller, metrics *metrics.Metrics) *Node {
+func NewNode(controller Controller, metrics *metrics.Metrics, poolSize int, hubPoolSize int) *Node {
 	node := &Node{
 		Metrics:    metrics,
 		controller: controller,
@@ -108,7 +104,8 @@ func NewNode(controller Controller, metrics *metrics.Metrics) *Node {
 		log:        log.WithFields(log.Fields{"context": "node"}),
 	}
 
-	node.hub = NewHub()
+	node.hub = NewHub(hubPoolSize)
+	node.GoPool = utils.NewGoPool(poolSize)
 
 	node.registerMetrics()
 
@@ -119,12 +116,6 @@ func NewNode(controller Controller, metrics *metrics.Metrics) *Node {
 func (n *Node) Start() error {
 	poll, err := netpoll.New(nil)
 	n.Poller = &poll
-
-	if err != nil {
-		return err
-	}
-
-	n.GoPool, err = utils.NewGoPool(goPoolMaxSize, goPoolQueueSize, goPoolSize)
 
 	if err != nil {
 		return err
@@ -201,6 +192,7 @@ func (n *Node) Shutdown() {
 			for _, session := range n.hub.sessions {
 				session.Send(disconnectMessage)
 				session.Disconnect("Shutdown", CloseGoingAway)
+				session.Flush()
 			}
 
 			n.log.Info("All active connections closed")
@@ -388,11 +380,11 @@ func transmit(s *Session, transmissions []string) {
 }
 
 func (n *Node) handleCommandReply(s *Session, msg *common.Message, reply *common.CommandResult) {
+	defer s.Flush()
+
 	if reply.Disconnect {
 		defer s.Disconnect("Command Failed", CloseAbnormalClosure)
 	}
-
-	defer s.Flush()
 
 	if reply.StopAllStreams {
 		n.hub.RemoveAllSubscriptions(s.UID, msg.Identifier)

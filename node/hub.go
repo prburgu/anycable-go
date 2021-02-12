@@ -68,7 +68,7 @@ type Hub struct {
 }
 
 // NewHub builds new hub instance
-func NewHub() *Hub {
+func NewHub(poolSize int) *Hub {
 	return &Hub{
 		broadcast:       make(chan *common.StreamMessage, 256),
 		disconnect:      make(chan *common.RemoteDisconnectMessage, 128),
@@ -80,14 +80,12 @@ func NewHub() *Hub {
 		sessionsStreams: make(map[string]map[string][]string),
 		shutdown:        make(chan struct{}),
 		log:             log.WithFields(log.Fields{"context": "hub"}),
+		pool:            utils.NewGoPool(poolSize),
 	}
 }
 
 // Run makes hub active
 func (h *Hub) Run() {
-	pool, _ := utils.NewGoPool(128, 1, 4)
-	h.pool = pool
-
 	h.done.Add(1)
 	for {
 		select {

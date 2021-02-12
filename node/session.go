@@ -7,6 +7,7 @@ import (
 	"github.com/anycable/anycable-go/common"
 	"github.com/apex/log"
 	"github.com/gorilla/websocket"
+	"github.com/oleiade/lane"
 )
 
 const (
@@ -59,8 +60,11 @@ type Session struct {
 	// Main mutex (for read/write and important session updates)
 	mu sync.Mutex
 	// Mutex for protocol-related state (env, subscriptions)
-	smu       sync.Mutex
+	smu sync.Mutex
+	// Mutex for flushing outgoing messages
+	flushMu   sync.Mutex
 	pingTimer *time.Timer
+	inbox     *lane.Queue
 
 	UID         string
 	Identifiers string
@@ -74,6 +78,7 @@ func NewSession(node *Node, ws Connection, url string, headers map[string]string
 		ws:            ws,
 		env:           common.NewSessionEnv(url, &headers),
 		subscriptions: make(map[string]bool),
+		inbox:         lane.NewQueue(),
 		closed:        false,
 		connected:     false,
 	}
@@ -98,10 +103,10 @@ func (s *Session) ReadMessage() {
 	if err != nil {
 		if websocket.IsCloseError(err, expectedCloseStatuses...) {
 			s.Log.Debugf("Websocket closed: %v", err)
-			s.Disconnect("Read closed", CloseNormalClosure)
+			s.DisconnectImmediately("Read closed", CloseNormalClosure)
 		} else {
 			s.Log.Debugf("Websocket close error: %v", err)
-			s.Disconnect("Read failed", CloseAbnormalClosure)
+			s.DisconnectImmediately("Read failed", CloseAbnormalClosure)
 		}
 		return
 	}
@@ -144,12 +149,20 @@ func (s *Session) DisconnectImmediately(reason string, code int) {
 
 // Schedule adds a taks to the execution queue
 func (s *Session) Schedule(task func()) {
-	task()
+	s.inbox.Enqueue(task)
 }
 
 // Flush executes tasks from the queue
 func (s *Session) Flush() {
+	s.node.GoPool.Schedule(func() {
+		s.flushMu.Lock()
+		defer s.flushMu.Unlock()
 
+		for s.inbox.Head() != nil {
+			task := s.inbox.Dequeue().(func())
+			task()
+		}
+	})
 }
 
 func (s *Session) close(reason string, code int) {
@@ -213,7 +226,7 @@ func (s *Session) sendPing() {
 	if err == nil {
 		s.addPing()
 	} else {
-		s.Disconnect("Ping failed", CloseAbnormalClosure)
+		s.DisconnectImmediately("Ping failed", CloseAbnormalClosure)
 	}
 }
 

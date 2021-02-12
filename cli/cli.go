@@ -48,6 +48,8 @@ func init() {
 	fs.IntVar(&defaults.Port, "port", portDefault, "")
 	fs.StringVar(&defaults.Path, "path", "/cable", "")
 	fs.StringVar(&defaults.HealthPath, "health-path", "/health", "")
+	fs.IntVar(&defaults.WsGopoolSize, "ws_gopool_size", 1024, "")
+	fs.IntVar(&defaults.HubGopoolSize, "hub_gopool_size", 128, "")
 
 	fs.StringVar(&defaults.SSL.CertPath, "ssl_cert", "", "")
 	fs.StringVar(&defaults.SSL.KeyPath, "ssl_key", "", "")
@@ -167,6 +169,8 @@ OPTIONS
   --write_buffer_size                    WebSocket connection write buffer size, default: 1024, env: ANYCABLE_WRITE_BUFFER_SIZE
   --max_message_size                     Maximum size of a message in bytes, default: 65536, env: ANYCABLE_MAX_MESSAGE_SIZE
   --enable_ws_compression                Enable experimental WebSocket per message compression, default: false, env: ANYCABLE_ENABLE_WS_COMPRESSION
+  --ws_gopool_size                       The size of the goroutines pool to read/write WS messages, default: 1024, env: ANYCABLE_WS_GOPOOL_SIZE
+  --hub_gopool_size                      The size of the goroutines pool to broadcast messages, default: 128, env: ANYCABLE_HUB_GOPOOL_SIZE
 
   -h                       This help screen
   -v                       Show version

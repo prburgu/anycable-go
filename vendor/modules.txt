@@ -48,6 +48,9 @@ github.com/mitchellh/go-mruby
 # github.com/namsral/flag v1.7.4-pre
 ## explicit
 github.com/namsral/flag
+# github.com/oleiade/lane v1.0.1
+## explicit
+github.com/oleiade/lane
 # github.com/pkg/errors v0.8.1
 ## explicit
 github.com/pkg/errors

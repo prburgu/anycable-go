@@ -19,6 +19,7 @@ require (
 	github.com/mattn/go-isatty v0.0.7
 	github.com/mitchellh/go-mruby v0.0.0-20181003231329-cd6a04a6ea57
 	github.com/namsral/flag v1.7.4-pre
+	github.com/oleiade/lane v1.0.1
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/processout/grpc-go-pool v1.2.1 // indirect
 	github.com/stretchr/testify v1.4.0

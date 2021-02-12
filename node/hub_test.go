@@ -7,7 +7,7 @@ import (
 )
 
 func TestUnsubscribeRaceConditions(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(2)
 	node := NewMockNode()
 
 	go hub.Run()
@@ -55,7 +55,7 @@ func TestUnsubscribeRaceConditions(t *testing.T) {
 }
 
 func TestUnsubscribeSession(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(2)
 	node := NewMockNode()
 
 	go hub.Run()
@@ -95,7 +95,7 @@ func TestUnsubscribeSession(t *testing.T) {
 }
 
 func TestSubscribeSession(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(2)
 	node := NewMockNode()
 
 	go hub.Run()
